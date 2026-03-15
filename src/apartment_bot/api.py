@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from apartment_bot.adapters.craigslist import CraigslistAdapter
 from apartment_bot.config import Settings
 from apartment_bot.core.presentation import build_dashboard_row
+from apartment_bot.core.scoring import score_listing
 from apartment_bot.core.sms import parse_sms_command
 from apartment_bot.core.state import derive_overall_status
 from apartment_bot.core.store import JsonStateStore
@@ -164,6 +165,8 @@ def create_app() -> FastAPI:
             "status": derive_overall_status(listing_state).value,
             "notify_other_user": False,
         }
+
+        response["dashboard_row"] = asdict(build_dashboard_row(listing, score_listing(listing, settings), listing_state))
 
         if parsed.action and parsed.action.value == "schedule":
             other_users = [candidate for candidate in settings.users if candidate.key != user.key]

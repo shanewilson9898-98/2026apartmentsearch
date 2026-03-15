@@ -141,6 +141,8 @@ Available endpoints:
 - `POST /evaluate-listings`
 - `POST /handle-reply`
 
+`/handle-reply` returns a `dashboard_row` object after each valid action so n8n can immediately append/update the shared Google Sheet with the latest `status`, `shane_action`, and `wife_action`.
+
 The current API uses seed fixtures for the sample Zillow, Craigslist, and Apartments.com URLs you provided. This is intentional for v1 wiring. Real scraping and normalization for those sources are still TODO.
 
 ## n8n Fit
