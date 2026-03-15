@@ -1,0 +1,26 @@
+{
+  "apartments_com_873f334f9c29": {
+    "listing_id": "apartments_com_873f334f9c29",
+    "manual_follow_up_required": false,
+    "outreach_status": "not_started",
+    "outreach_timestamp": null,
+    "outreach_triggered_by": null,
+    "user_actions": {}
+  },
+  "craigslist_18e4955e7bb8": {
+    "listing_id": "craigslist_18e4955e7bb8",
+    "manual_follow_up_required": false,
+    "outreach_status": "not_started",
+    "outreach_timestamp": null,
+    "outreach_triggered_by": null,
+    "user_actions": {}
+  },
+  "zillow_5061bf1468b0": {
+    "listing_id": "zillow_5061bf1468b0",
+    "manual_follow_up_required": false,
+    "outreach_status": "not_started",
+    "outreach_timestamp": null,
+    "outreach_triggered_by": null,
+    "user_actions": {}
+  }
+}

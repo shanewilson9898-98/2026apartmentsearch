@@ -1,0 +1,292 @@
+{
+  "name": "Apartment Search Bot v1",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { project_root: '/Users/shanewilson/Documents/New project', python_api_base_url: 'http://localhost:8000', twilio_from_number: '+14422392989', users: [{ key: 'shane', name: 'Shane', phone: '+19086426469' }, { key: 'jan', name: 'Jan', phone: '+19083289946' }], sheet_id: '1dM9TXmFEu_9JYxAFFWflN0h3WSRQvbJl-h3i3KnBGmg', sheet_tab: 'Listings', source_seeds: { craigslist: ['https://sfbay.craigslist.org/sfc/apa/d/san-francisco-san-francisco-bedroom/7920590322.html'], zillow: ['https://www.zillow.com/apartments/san-francisco-ca/mission-rock/CkCcwv/#udp-460992437'], apartments_com: ['https://www.apartments.com/edgewater-san-francisco-ca/1ybjl44/#pkndylr-2-unit'] } } }];"
+      },
+      "id": "build-config",
+      "name": "Build Workflow Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.python_api_base_url + '/evaluate-listings'}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify({ source_seeds: $json.source_seeds, users: $json.users, sheet_id: $json.sheet_id, sheet_tab: $json.sheet_tab })}}",
+        "options": {}
+      },
+      "id": "run-python-search",
+      "name": "Run Python Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $json.dashboard_rows || [];\nreturn rows.map((row) => ({ json: row }));"
+      },
+      "id": "prepare-dashboard-rows",
+      "name": "Prepare Dashboard Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const alerts = $json.sms_alerts || [];\nreturn alerts.flatMap((alert) => {\n  const users = alert.users || [];\n  return users.map((user) => ({\n    json: {\n      listing_id: alert.listing_id,\n      to: user.phone,\n      body: alert.body,\n      user_key: user.key\n    }\n  }));\n});"
+      },
+      "id": "prepare-sms-alerts",
+      "name": "Prepare High Score SMS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{$env.TWILIO_ACCOUNT_SID}}/Messages.json",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{$json.to}}"
+            },
+            {
+              "name": "From",
+              "value": "+14422392989"
+            },
+            {
+              "name": "Body",
+              "value": "={{$json.body}}"
+            }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "options": {}
+      },
+      "id": "send-twilio-sms",
+      "name": "Send Twilio SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1310,
+        320
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "path": "apartment-bot/sms-reply",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "twilio-reply-webhook",
+      "name": "Twilio SMS Reply Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        620
+      ],
+      "webhookId": "apartment-bot-sms-reply"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.Body || '';\nconst from = $json.From || '';\nconst listingMatch = body.match(/\\[ID:([^\\]]+)\\]/i);\nconst commandText = body.replace(/\\[ID:[^\\]]+\\]/i, '').trim();\nreturn [{ json: { from_number: from, raw_body: body, body: commandText, listing_id: listingMatch ? listingMatch[1].trim() : '', twilio_message_sid: $json.MessageSid || '' } }];"
+      },
+      "id": "normalize-reply",
+      "name": "Normalize Reply Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/handle-reply",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify($json)}}",
+        "options": {}
+      },
+      "id": "handle-reply-python",
+      "name": "Handle Reply In Python",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({ ok: true, message: $json.reply_text || 'Reply received.' })}}",
+        "options": {}
+      },
+      "id": "reply-ack",
+      "name": "Reply Ack",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1060,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { note: 'Connect this node output to a Google Sheets Append/Update Row node in n8n. Match on listing_id. Map only the 10 v1 dashboard columns.' } }];"
+      },
+      "id": "sheet-note",
+      "name": "Google Sheets Wiring Note",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1310,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Workflow Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Workflow Config": {
+      "main": [
+        [
+          {
+            "node": "Run Python Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Python Search": {
+      "main": [
+        [
+          {
+            "node": "Prepare Dashboard Rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare High Score SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Dashboard Rows": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Wiring Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare High Score SMS": {
+      "main": [
+        [
+          {
+            "node": "Send Twilio SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Twilio SMS Reply Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Reply Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Reply Payload": {
+      "main": [
+        [
+          {
+            "node": "Handle Reply In Python",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Reply In Python": {
+      "main": [
+        [
+          {
+            "node": "Reply Ack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "apartment-search-bot-v1",
+  "meta": {},
+  "tags": []
+}
