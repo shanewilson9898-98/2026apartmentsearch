@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
+from apartment_bot.adapters.craigslist import CraigslistAdapter
 from apartment_bot.config import Settings
 from apartment_bot.core.presentation import build_dashboard_row
 from apartment_bot.core.sms import parse_sms_command
@@ -59,8 +60,25 @@ def create_app() -> FastAPI:
         skipped: list[dict[str, Any]] = []
 
         for source_name, urls in payload.source_seeds.items():
-            for url in urls:
-                listing = build_seed_listing(source_name, url)
+            try:
+                if source_name == "craigslist":
+                    listings = CraigslistAdapter(source_urls=urls).fetch_listings()
+                else:
+                    listings = [build_seed_listing(source_name, url) for url in urls]
+            except Exception as exc:
+                skipped.extend(
+                    {
+                        "listing_id": "",
+                        "source": source_name,
+                        "listing_url": url,
+                        "geo_reason": "",
+                        "filter_reasons": [f"source fetch failed: {type(exc).__name__}: {exc}"],
+                    }
+                    for url in urls
+                )
+                continue
+
+            for listing in listings:
                 store.save_listing(listing)
                 listing_state = store.get_state(listing.listing_id)
                 store.save_state(listing_state)
@@ -71,7 +89,7 @@ def create_app() -> FastAPI:
                         {
                             "listing_id": listing.listing_id,
                             "source": source_name,
-                            "listing_url": url,
+                            "listing_url": listing.listing_url,
                             "geo_reason": evaluation.geo_result.reason,
                             "filter_reasons": evaluation.filter_reasons,
                         }
