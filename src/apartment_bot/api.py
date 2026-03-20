@@ -105,7 +105,8 @@ def create_app() -> FastAPI:
                     body = (
                         f"[ID:{listing.listing_id}] "
                         f"{evaluation.score_result.score}/100 {listing.address} "
-                        f"{int(listing.beds or 0)}BR ${listing.rent}. "
+                        f"{int(listing.beds or 0)}BR ${listing.rent}.\n"
+                        f"{listing.listing_url}\n"
                         "Reply 1 schedule, 2 save, 3 pass, 4 more"
                     )
                     users = [{"key": user.key, "phone": user.phone} for user in payload.users]
