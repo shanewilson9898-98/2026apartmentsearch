@@ -20,3 +20,10 @@ def infer_completeness_score(address: str | None, rent: int | None, description:
     if images:
         score += 0.2
     return round(score, 2)
+
+
+def normalize_phone(number: str) -> str:
+    digits = "".join(ch for ch in number if ch.isdigit())
+    if len(digits) == 11 and digits.startswith("1"):
+        return digits[1:]
+    return digits

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from apartment_bot.adapters.craigslist import CraigslistAdapter
 from apartment_bot.config import Settings
 from apartment_bot.core.models import OverallListingStatus
+from apartment_bot.core.normalize import normalize_phone
 from apartment_bot.core.presentation import build_dashboard_row
 from apartment_bot.core.scoring import score_listing
 from apartment_bot.core.sms import parse_sms_command
@@ -39,10 +40,6 @@ class HandleReplyRequest(BaseModel):
     raw_body: str | None = None
     listing_id: str | None = None
     twilio_message_sid: str | None = None
-
-
-def _normalize_phone(number: str) -> str:
-    return "".join(ch for ch in number if ch.isdigit())
 
 
 def _build_alert_payload(listing, score: float, users: list[UserPayload]) -> dict[str, Any]:
@@ -147,8 +144,8 @@ def create_app() -> FastAPI:
 
     @app.post("/handle-reply")
     def handle_reply(payload: HandleReplyRequest) -> dict[str, Any]:
-        from_number = _normalize_phone(payload.from_number)
-        user_map = {_normalize_phone(user.phone): user for user in settings.users}
+        from_number = normalize_phone(payload.from_number)
+        user_map = {normalize_phone(user.phone): user for user in settings.users if normalize_phone(user.phone)}
         user = user_map.get(from_number)
         if user is None:
             return {"ok": False, "reply_text": "Unknown sender number."}

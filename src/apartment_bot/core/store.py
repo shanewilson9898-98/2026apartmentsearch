@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from apartment_bot.core.models import Listing, ListingSource, ListingState, OutreachStatus, QueueState, UserAction, UserActionType
+from apartment_bot.core.normalize import normalize_phone
 
 
 def _serialize_datetime(value: datetime | None) -> str | None:
@@ -110,7 +111,7 @@ class JsonStateStore:
 
     def record_alert(self, phone_number: str, listing_id: str) -> None:
         payload = self._read_json(self._alerts_path)
-        normalized_phone = "".join(ch for ch in phone_number if ch.isdigit())
+        normalized_phone = normalize_phone(phone_number)
         payload[normalized_phone] = {
             "listing_id": listing_id,
             "updated_at": datetime.utcnow().isoformat(),
@@ -119,7 +120,7 @@ class JsonStateStore:
 
     def lookup_recent_listing_for_phone(self, phone_number: str) -> str | None:
         payload = self._read_json(self._alerts_path)
-        normalized_phone = "".join(ch for ch in phone_number if ch.isdigit())
+        normalized_phone = normalize_phone(phone_number)
         record = payload.get(normalized_phone, {})
         return record.get("listing_id")
 
