@@ -3,7 +3,7 @@ from __future__ import annotations
 from apartment_bot.core.models import Listing, ListingState, UserActionType
 from apartment_bot.core.presentation import build_more_details_message
 from apartment_bot.core.scoring import score_listing
-from apartment_bot.core.state import mark_outreach_sent, record_user_action
+from apartment_bot.core.state import derive_overall_status, is_terminal_status, mark_outreach_sent, record_user_action
 from apartment_bot.integrations.outreach import OutreachService
 
 
@@ -39,5 +39,15 @@ def handle_user_reply(
             manual_follow_up=outreach_result.manual_follow_up_required,
         )
         response["message"] = outreach_result.message
+    else:
+        status = derive_overall_status(listing_state)
+        if status == status.MUTUAL_SAVE:
+            response["message"] = "Mutual save recorded."
+        elif status == status.SAVED_BY_ONE:
+            response["message"] = "Saved. Waiting on the other person's decision."
+        elif status == status.PASSED:
+            response["message"] = "Passed."
+
+    response["is_terminal"] = is_terminal_status(derive_overall_status(listing_state))
 
     return response

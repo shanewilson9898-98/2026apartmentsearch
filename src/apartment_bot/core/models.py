@@ -32,7 +32,8 @@ class UserActionType(str, Enum):
 
 class OverallListingStatus(str, Enum):
     NEW = "new"
-    SAVED = "saved"
+    SAVED_BY_ONE = "saved_by_one"
+    MUTUAL_SAVE = "mutual_save"
     PASSED = "passed"
     SCHEDULED = "scheduled"
     MANUAL_FOLLOW_UP = "manual_follow_up"
@@ -191,3 +192,10 @@ class DashboardRow:
     listing_url: str
     shane_action: str
     wife_action: str
+
+
+@dataclass
+class QueueState:
+    active_listing_id: str | None = None
+    pending_listing_ids: list[str] = field(default_factory=list)
+    completed_listing_ids: list[str] = field(default_factory=list)

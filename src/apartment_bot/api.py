@@ -8,10 +8,11 @@ from pydantic import BaseModel, Field
 
 from apartment_bot.adapters.craigslist import CraigslistAdapter
 from apartment_bot.config import Settings
+from apartment_bot.core.models import OverallListingStatus
 from apartment_bot.core.presentation import build_dashboard_row
 from apartment_bot.core.scoring import score_listing
 from apartment_bot.core.sms import parse_sms_command
-from apartment_bot.core.state import derive_overall_status
+from apartment_bot.core.state import derive_overall_status, is_terminal_status
 from apartment_bot.core.store import JsonStateStore
 from apartment_bot.integrations.outreach import OutreachService
 from apartment_bot.orchestration.handlers import handle_user_reply
@@ -44,6 +45,21 @@ def _normalize_phone(number: str) -> str:
     return "".join(ch for ch in number if ch.isdigit())
 
 
+def _build_alert_payload(listing, score: float, users: list[UserPayload]) -> dict[str, Any]:
+    body = (
+        f"[ID:{listing.listing_id}] "
+        f"{score}/100 {listing.address} "
+        f"{int(listing.beds or 0)}BR ${listing.rent}.\n"
+        f"{listing.listing_url}\n"
+        "Reply 1 schedule, 2 save, 3 pass, 4 more"
+    )
+    return {
+        "listing_id": listing.listing_id,
+        "body": body,
+        "users": [{"key": user.key, "phone": user.phone} for user in users],
+    }
+
+
 def create_app() -> FastAPI:
     settings = Settings.from_env()
     store = JsonStateStore(settings.state_store_dir)
@@ -59,6 +75,7 @@ def create_app() -> FastAPI:
         dashboard_rows: list[dict[str, str]] = []
         sms_alerts: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
+        queue_state = store.get_queue()
 
         for source_name, urls in payload.source_seeds.items():
             try:
@@ -102,23 +119,25 @@ def create_app() -> FastAPI:
                     dashboard_rows.append(asdict(row))
 
                 if evaluation.decision_result.send_sms:
-                    body = (
-                        f"[ID:{listing.listing_id}] "
-                        f"{evaluation.score_result.score}/100 {listing.address} "
-                        f"{int(listing.beds or 0)}BR ${listing.rent}.\n"
-                        f"{listing.listing_url}\n"
-                        "Reply 1 schedule, 2 save, 3 pass, 4 more"
-                    )
-                    users = [{"key": user.key, "phone": user.phone} for user in payload.users]
-                    sms_alerts.append(
-                        {
-                            "listing_id": listing.listing_id,
-                            "body": body,
-                            "users": users,
-                        }
-                    )
+                    listing.raw_payload["queue_score"] = evaluation.score_result.score
+                    store.save_listing(listing)
+                    queue_state = store.enqueue_listing(listing.listing_id, evaluation.score_result.score)
+
+        active_listing_id = queue_state.active_listing_id
+        activated_new_listing = False
+        if active_listing_id is None:
+            active_listing_id = store.activate_next_listing()
+            activated_new_listing = active_listing_id is not None
+
+        if active_listing_id and activated_new_listing:
+            active_listing = store.get_listing(active_listing_id)
+            if active_listing:
+                active_state = store.get_state(active_listing_id)
+                active_score = score_listing(active_listing, settings).score
+                if derive_overall_status(active_state) in {OverallListingStatus.NEW, OverallListingStatus.SAVED_BY_ONE}:
+                    sms_alerts.append(_build_alert_payload(active_listing, active_score, payload.users))
                     for user in payload.users:
-                        store.record_alert(user.phone, listing.listing_id)
+                        store.record_alert(user.phone, active_listing_id)
 
         return {
             "dashboard_rows": dashboard_rows,
@@ -138,7 +157,8 @@ def create_app() -> FastAPI:
         if not parsed.valid:
             return {"ok": False, "reply_text": parsed.error_message}
 
-        listing_id = payload.listing_id or store.lookup_recent_listing_for_phone(payload.from_number)
+        queue_state = store.get_queue()
+        listing_id = queue_state.active_listing_id or payload.listing_id or store.lookup_recent_listing_for_phone(payload.from_number)
         if not listing_id:
             return {"ok": False, "reply_text": "Could not match this reply to a listing."}
 
@@ -168,6 +188,18 @@ def create_app() -> FastAPI:
         }
 
         response["dashboard_row"] = asdict(build_dashboard_row(listing, score_listing(listing, settings), listing_state))
+
+        if bool(result.get("is_terminal", False)):
+            store.mark_queue_completed(listing_id)
+            next_listing_id = store.activate_next_listing()
+            if next_listing_id:
+                next_listing = store.get_listing(next_listing_id)
+                if next_listing is not None:
+                    next_score = score_listing(next_listing, settings).score
+                    next_alert = _build_alert_payload(next_listing, next_score, list(settings.users))
+                    response["next_sms_alert"] = next_alert
+                    for user_config in settings.users:
+                        store.record_alert(user_config.phone, next_listing_id)
 
         if parsed.action and parsed.action.value == "schedule":
             other_users = [candidate for candidate in settings.users if candidate.key != user.key]

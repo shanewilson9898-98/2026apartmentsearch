@@ -5,7 +5,7 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from apartment_bot.core.models import Listing, ListingSource, ListingState, OutreachStatus, UserAction, UserActionType
+from apartment_bot.core.models import Listing, ListingSource, ListingState, OutreachStatus, QueueState, UserAction, UserActionType
 
 
 def _serialize_datetime(value: datetime | None) -> str | None:
@@ -76,6 +76,7 @@ class JsonStateStore:
         self._listings_path = self.base_dir / "listings.json"
         self._states_path = self.base_dir / "states.json"
         self._alerts_path = self.base_dir / "alerts.json"
+        self._queue_path = self.base_dir / "queue.json"
 
     def _read_json(self, path: Path) -> dict:
         if not path.exists():
@@ -121,3 +122,58 @@ class JsonStateStore:
         normalized_phone = "".join(ch for ch in phone_number if ch.isdigit())
         record = payload.get(normalized_phone, {})
         return record.get("listing_id")
+
+    def get_queue(self) -> QueueState:
+        payload = self._read_json(self._queue_path)
+        if not payload:
+            return QueueState()
+        return QueueState(
+            active_listing_id=payload.get("active_listing_id"),
+            pending_listing_ids=payload.get("pending_listing_ids", []),
+            completed_listing_ids=payload.get("completed_listing_ids", []),
+        )
+
+    def save_queue(self, queue_state: QueueState) -> None:
+        self._write_json(
+            self._queue_path,
+            {
+                "active_listing_id": queue_state.active_listing_id,
+                "pending_listing_ids": queue_state.pending_listing_ids,
+                "completed_listing_ids": queue_state.completed_listing_ids,
+            },
+        )
+
+    def enqueue_listing(self, listing_id: str, score: float) -> QueueState:
+        queue_state = self.get_queue()
+        if listing_id == queue_state.active_listing_id:
+            return queue_state
+        if listing_id in queue_state.completed_listing_ids or listing_id in queue_state.pending_listing_ids:
+            return queue_state
+        queue_state.pending_listing_ids.append(listing_id)
+        scores = {
+            queued_id: score if queued_id == listing_id else (self.get_listing(queued_id).raw_payload.get("queue_score", 0) if self.get_listing(queued_id) else 0)
+            for queued_id in queue_state.pending_listing_ids
+        }
+        queue_state.pending_listing_ids.sort(key=lambda queued_id: scores.get(queued_id, 0), reverse=True)
+        self.save_queue(queue_state)
+        return queue_state
+
+    def mark_queue_completed(self, listing_id: str) -> QueueState:
+        queue_state = self.get_queue()
+        if listing_id not in queue_state.completed_listing_ids:
+            queue_state.completed_listing_ids.append(listing_id)
+        queue_state.pending_listing_ids = [queued_id for queued_id in queue_state.pending_listing_ids if queued_id != listing_id]
+        if queue_state.active_listing_id == listing_id:
+            queue_state.active_listing_id = None
+        self.save_queue(queue_state)
+        return queue_state
+
+    def activate_next_listing(self) -> str | None:
+        queue_state = self.get_queue()
+        if queue_state.active_listing_id:
+            return queue_state.active_listing_id
+        if not queue_state.pending_listing_ids:
+            return None
+        queue_state.active_listing_id = queue_state.pending_listing_ids.pop(0)
+        self.save_queue(queue_state)
+        return queue_state.active_listing_id

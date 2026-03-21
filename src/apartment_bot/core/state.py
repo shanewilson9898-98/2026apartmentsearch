@@ -13,16 +13,27 @@ from apartment_bot.core.models import (
 
 
 def derive_overall_status(listing_state: ListingState) -> OverallListingStatus:
-    actions = {entry.action for entry in listing_state.user_actions.values()}
-    if any(action == UserActionType.SCHEDULE for action in actions):
+    actions_by_user = {user_key: entry.action for user_key, entry in listing_state.user_actions.items()}
+    actions = set(actions_by_user.values())
+    if UserActionType.SCHEDULE in actions:
         return OverallListingStatus.SCHEDULED
-    if any(action == UserActionType.PASS for action in actions):
+    if UserActionType.PASS in actions:
         return OverallListingStatus.PASSED
-    if any(action == UserActionType.SAVE for action in actions):
-        return OverallListingStatus.SAVED
+    if actions_by_user.get("shane") == UserActionType.SAVE and actions_by_user.get("wife") == UserActionType.SAVE:
+        return OverallListingStatus.MUTUAL_SAVE
+    if UserActionType.SAVE in actions:
+        return OverallListingStatus.SAVED_BY_ONE
     if listing_state.manual_follow_up_required:
         return OverallListingStatus.MANUAL_FOLLOW_UP
     return OverallListingStatus.NEW
+
+
+def is_terminal_status(status: OverallListingStatus) -> bool:
+    return status in {
+        OverallListingStatus.PASSED,
+        OverallListingStatus.SCHEDULED,
+        OverallListingStatus.MUTUAL_SAVE,
+    }
 
 
 def record_user_action(
