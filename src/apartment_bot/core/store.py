@@ -78,6 +78,7 @@ class JsonStateStore:
         self._states_path = self.base_dir / "states.json"
         self._alerts_path = self.base_dir / "alerts.json"
         self._queue_path = self.base_dir / "queue.json"
+        self._seen_path = self.base_dir / "seen.json"
 
     def _read_json(self, path: Path) -> dict:
         if not path.exists():
@@ -178,3 +179,16 @@ class JsonStateStore:
         queue_state.active_listing_id = queue_state.pending_listing_ids.pop(0)
         self.save_queue(queue_state)
         return queue_state.active_listing_id
+
+    def has_seen_listing(self, listing_id: str) -> bool:
+        payload = self._read_json(self._seen_path)
+        return listing_id in payload
+
+    def mark_listing_seen(self, listing: Listing) -> None:
+        payload = self._read_json(self._seen_path)
+        payload[listing.listing_id] = {
+            "listing_url": listing.listing_url,
+            "source": listing.source.value,
+            "seen_at": datetime.utcnow().isoformat(),
+        }
+        self._write_json(self._seen_path, payload)

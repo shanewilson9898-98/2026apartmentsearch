@@ -72,9 +72,11 @@ def create_app() -> FastAPI:
         dashboard_rows: list[dict[str, str]] = []
         sms_alerts: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
+        discovery_summary: dict[str, dict[str, int]] = {}
         queue_state = store.get_queue()
 
         for source_name, urls in payload.source_seeds.items():
+            source_summary = {"discovered": 0, "new": 0, "already_seen": 0}
             try:
                 if source_name == "craigslist":
                     listings = CraigslistAdapter(source_urls=urls).fetch_listings()
@@ -91,13 +93,21 @@ def create_app() -> FastAPI:
                     }
                     for url in urls
                 )
+                discovery_summary[source_name] = source_summary
                 continue
 
             for listing in listings:
+                source_summary["discovered"] += 1
+                if store.has_seen_listing(listing.listing_id):
+                    source_summary["already_seen"] += 1
+                    continue
+
+                source_summary["new"] += 1
                 store.save_listing(listing)
                 listing_state = store.get_state(listing.listing_id)
                 store.save_state(listing_state)
                 evaluation = evaluate_listing(listing, settings)
+                store.mark_listing_seen(listing)
 
                 if evaluation.score_result is None or evaluation.decision_result is None:
                     skipped.append(
@@ -120,6 +130,8 @@ def create_app() -> FastAPI:
                     store.save_listing(listing)
                     queue_state = store.enqueue_listing(listing.listing_id, evaluation.score_result.score)
 
+            discovery_summary[source_name] = source_summary
+
         active_listing_id = queue_state.active_listing_id
         activated_new_listing = False
         if active_listing_id is None:
@@ -140,6 +152,7 @@ def create_app() -> FastAPI:
             "dashboard_rows": dashboard_rows,
             "sms_alerts": sms_alerts,
             "skipped": skipped,
+            "discovery_summary": discovery_summary,
         }
 
     @app.post("/handle-reply")
