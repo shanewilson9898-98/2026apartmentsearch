@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from html import unescape
+from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from apartment_bot.adapters.base import ListingSourceAdapter
@@ -19,10 +20,32 @@ class CraigslistAdapter(ListingSourceAdapter):
 
     def fetch_listings(self) -> list[Listing]:
         listings: list[Listing] = []
-        for url in self.source_urls:
-            html = self._fetch_html(url)
-            listings.append(self.parse_listing_html(url, html))
+        seen_listing_ids: set[str] = set()
+
+        for source_url in self.source_urls:
+            for listing_url in self._expand_source_url(source_url):
+                html = self._fetch_html(listing_url)
+                listing = self.parse_listing_html(listing_url, html)
+                if listing.listing_id in seen_listing_ids:
+                    continue
+                seen_listing_ids.add(listing.listing_id)
+                listings.append(listing)
+
         return listings
+
+    def _expand_source_url(self, source_url: str) -> list[str]:
+        html = self._fetch_html(source_url)
+        if self._looks_like_listing_url(source_url):
+            return [source_url]
+
+        discovered_urls = self.extract_listing_urls(source_url, html)
+        if discovered_urls:
+            return discovered_urls
+
+        if self._looks_like_listing_page(html):
+            return [source_url]
+
+        return []
 
     def _fetch_html(self, url: str) -> str:
         request = Request(
@@ -36,6 +59,26 @@ class CraigslistAdapter(ListingSourceAdapter):
         )
         with urlopen(request, timeout=self.timeout_seconds) as response:
             return response.read().decode("utf-8", errors="replace")
+
+    def extract_listing_urls(self, source_url: str, html: str) -> list[str]:
+        candidate_urls: list[str] = []
+        for tag_match in re.finditer(r"<a\b[^>]*>", html, re.IGNORECASE):
+            tag = tag_match.group(0)
+            if not any(marker in tag.lower() for marker in ['cl-app-anchor', 'data-id=', 'result-title']):
+                continue
+            href_match = re.search(r'href="([^"]+/\d+\.html)"', tag, re.IGNORECASE)
+            if href_match:
+                candidate_urls.append(urljoin(source_url, unescape(href_match.group(1))))
+
+        deduped_urls: list[str] = []
+        seen_urls: set[str] = set()
+        for url in candidate_urls:
+            normalized_url = self._normalize_listing_url(url)
+            if normalized_url in seen_urls:
+                continue
+            seen_urls.add(normalized_url)
+            deduped_urls.append(normalized_url)
+        return deduped_urls
 
     def parse_listing_html(self, url: str, html: str) -> Listing:
         posting_data = self._extract_json_script(html, "ld_posting_data")
@@ -208,3 +251,13 @@ class CraigslistAdapter(ListingSourceAdapter):
 
     def _strip_tags(self, value: str) -> str:
         return re.sub(r"<[^>]+>", "", value)
+
+    def _looks_like_listing_url(self, url: str) -> bool:
+        return re.search(r"/\d+\.html(?:\?|$)", url) is not None
+
+    def _looks_like_listing_page(self, html: str) -> bool:
+        return ('id="postingbody"' in html) or ('id="ld_posting_data"' in html)
+
+    def _normalize_listing_url(self, url: str) -> str:
+        parsed = urlparse(url)
+        return parsed._replace(query="", fragment="").geturl()
