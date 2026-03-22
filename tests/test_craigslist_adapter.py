@@ -16,6 +16,26 @@ SEARCH_HTML = """
 """
 
 
+RSS_XML = """
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>First</title>
+      <link>https://sfbay.craigslist.org/sfc/apa/d/san-francisco-first-place/1111111111.html</link>
+    </item>
+    <item>
+      <title>Second</title>
+      <link>https://sfbay.craigslist.org/sfc/apa/d/san-francisco-second-place/2222222222.html</link>
+    </item>
+    <item>
+      <title>Duplicate</title>
+      <link>https://sfbay.craigslist.org/sfc/apa/d/san-francisco-second-place/2222222222.html</link>
+    </item>
+  </channel>
+</rss>
+"""
+
+
 LISTING_HTML = """
 <html>
   <head>
@@ -57,6 +77,8 @@ class CraigslistAdapterTests(unittest.TestCase):
     def test_fetch_listings_expands_search_page_and_dedupes_results(self) -> None:
         class FakeCraigslistAdapter(CraigslistAdapter):
             def _fetch_html(self, url: str) -> str:
+                if "format=rss" in url:
+                    return RSS_XML
                 if "search" in url:
                     return SEARCH_HTML
                 return LISTING_HTML
@@ -71,6 +93,22 @@ class CraigslistAdapterTests(unittest.TestCase):
         self.assertEqual(
             [listing.listing_id for listing in listings],
             ["craigslist_1111111111", "craigslist_2222222222"],
+        )
+
+    def test_extract_listing_urls_from_rss(self) -> None:
+        adapter = CraigslistAdapter()
+
+        urls = adapter.extract_listing_urls_from_rss(
+            "https://sfbay.craigslist.org/search/sfc/apa?format=rss",
+            RSS_XML,
+        )
+
+        self.assertEqual(
+            urls,
+            [
+                "https://sfbay.craigslist.org/sfc/apa/d/san-francisco-first-place/1111111111.html",
+                "https://sfbay.craigslist.org/sfc/apa/d/san-francisco-second-place/2222222222.html",
+            ],
         )
 
 

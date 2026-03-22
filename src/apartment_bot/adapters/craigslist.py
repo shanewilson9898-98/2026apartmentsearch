@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from html import unescape
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 from apartment_bot.adapters.base import ListingSourceAdapter
@@ -34,9 +34,16 @@ class CraigslistAdapter(ListingSourceAdapter):
         return listings
 
     def _expand_source_url(self, source_url: str) -> list[str]:
-        html = self._fetch_html(source_url)
         if self._looks_like_listing_url(source_url):
             return [source_url]
+
+        rss_feed_url = self._build_rss_feed_url(source_url)
+        rss_xml = self._fetch_html(rss_feed_url)
+        discovered_urls = self.extract_listing_urls_from_rss(rss_feed_url, rss_xml)
+        if discovered_urls:
+            return discovered_urls
+
+        html = self._fetch_html(source_url)
 
         discovered_urls = self.extract_listing_urls(source_url, html)
         if discovered_urls:
@@ -78,6 +85,20 @@ class CraigslistAdapter(ListingSourceAdapter):
                 continue
             seen_urls.add(normalized_url)
             deduped_urls.append(normalized_url)
+        return deduped_urls
+
+    def extract_listing_urls_from_rss(self, source_url: str, rss_xml: str) -> list[str]:
+        candidate_urls = [
+            self._normalize_listing_url(unescape(match.group(1).strip()))
+            for match in re.finditer(r"<link>(https?://[^<]+/\d+\.html)</link>", rss_xml, re.IGNORECASE)
+        ]
+        deduped_urls: list[str] = []
+        seen_urls: set[str] = set()
+        for url in candidate_urls:
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            deduped_urls.append(url)
         return deduped_urls
 
     def parse_listing_html(self, url: str, html: str) -> Listing:
@@ -261,3 +282,9 @@ class CraigslistAdapter(ListingSourceAdapter):
     def _normalize_listing_url(self, url: str) -> str:
         parsed = urlparse(url)
         return parsed._replace(query="", fragment="").geturl()
+
+    def _build_rss_feed_url(self, source_url: str) -> str:
+        parsed = urlparse(source_url)
+        query_items = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        query_items["format"] = "rss"
+        return urlunparse(parsed._replace(query=urlencode(query_items)))
