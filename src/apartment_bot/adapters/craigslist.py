@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from html import unescape
+from urllib.error import HTTPError
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
@@ -55,17 +56,55 @@ class CraigslistAdapter(ListingSourceAdapter):
         return []
 
     def _fetch_html(self, url: str) -> str:
-        request = Request(
-            url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36"
-                )
-            },
-        )
-        with urlopen(request, timeout=self.timeout_seconds) as response:
-            return response.read().decode("utf-8", errors="replace")
+        # Craigslist is sensitive to request shape; retry direct listing fetches
+        # with fuller browser-like headers before giving up on the source.
+        header_sets = [self._default_headers(), self._browser_retry_headers(url)]
+        last_error: Exception | None = None
+
+        for index, headers in enumerate(header_sets):
+            try:
+                request = Request(url, headers=headers)
+                with urlopen(request, timeout=self.timeout_seconds) as response:
+                    return response.read().decode("utf-8", errors="replace")
+            except HTTPError as exc:
+                last_error = exc
+                if index == len(header_sets) - 1 or not self._should_retry_fetch(url, exc):
+                    raise
+            except Exception as exc:
+                last_error = exc
+                if index == len(header_sets) - 1:
+                    raise
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError(f"Failed to fetch Craigslist URL: {url}")
+
+    def _default_headers(self) -> dict[str, str]:
+        return {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36"
+            )
+        }
+
+    def _browser_retry_headers(self, url: str) -> dict[str, str]:
+        parsed = urlparse(url)
+        referer = f"{parsed.scheme}://{parsed.netloc}/"
+        return {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Referer": referer,
+            "Upgrade-Insecure-Requests": "1",
+        }
+
+    def _should_retry_fetch(self, url: str, exc: HTTPError) -> bool:
+        return self._looks_like_listing_url(url) and exc.code in {403, 410, 429}
 
     def extract_listing_urls(self, source_url: str, html: str) -> list[str]:
         candidate_urls: list[str] = []
