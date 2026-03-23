@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import json
+from hashlib import sha1
+from functools import lru_cache
 from dataclasses import asdict
 from typing import Any
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
@@ -10,8 +15,8 @@ from apartment_bot.adapters.apartments_com import ApartmentsComAdapter
 from apartment_bot.adapters.craigslist import CraigslistAdapter
 from apartment_bot.adapters.zillow import ZillowAdapter
 from apartment_bot.config import Settings
-from apartment_bot.core.models import OverallListingStatus
-from apartment_bot.core.normalize import normalize_phone
+from apartment_bot.core.models import Listing, ListingSource, OverallListingStatus
+from apartment_bot.core.normalize import infer_bool_from_text, infer_completeness_score, normalize_phone
 from apartment_bot.core.presentation import build_dashboard_row
 from apartment_bot.core.scoring import score_listing
 from apartment_bot.core.sms import parse_sms_command
@@ -29,7 +34,7 @@ class UserPayload(BaseModel):
 
 
 class EvaluateListingsRequest(BaseModel):
-    source_seeds: dict[str, list[str]] = Field(default_factory=dict)
+    source_seeds: dict[str, list[Any]] = Field(default_factory=dict)
     users: list[UserPayload] = Field(default_factory=list)
     sheet_id: str | None = None
     sheet_tab: str | None = None
@@ -79,8 +84,7 @@ def create_app() -> FastAPI:
         for source_name, urls in payload.source_seeds.items():
             source_summary = {"discovered": 0, "new": 0, "already_seen": 0}
             try:
-                adapter = _build_source_adapter(source_name, urls)
-                listings = adapter.fetch_listings()
+                listings = _load_seed_listings(source_name, urls)
             except Exception as exc:
                 skipped.extend(
                     {
@@ -225,6 +229,15 @@ def create_app() -> FastAPI:
     return app
 
 
+def _load_seed_listings(source_name: str, seeds: list[Any]) -> list[Listing]:
+    direct_listings = [_build_listing_from_seed(source_name, seed) for seed in seeds if isinstance(seed, dict)]
+    source_urls = [str(seed).strip() for seed in seeds if isinstance(seed, str) and str(seed).strip()]
+    if not source_urls:
+        return direct_listings
+    adapter = _build_source_adapter(source_name, source_urls)
+    return [*direct_listings, *adapter.fetch_listings()]
+
+
 def _build_source_adapter(source_name: str, urls: list[str]):
     if source_name == "craigslist":
         return CraigslistAdapter(source_urls=urls)
@@ -233,6 +246,185 @@ def _build_source_adapter(source_name: str, urls: list[str]):
     if source_name == "apartments_com":
         return ApartmentsComAdapter(source_urls=urls)
     raise ValueError(f"Unsupported source: {source_name}")
+
+
+def _build_listing_from_seed(source_name: str, seed: dict[str, Any]) -> Listing:
+    listing_url = str(seed.get("listing_url") or "").strip()
+    if not listing_url:
+        raise ValueError(f"Missing listing_url for {source_name} seed")
+
+    source = _listing_source_for_name(source_name)
+    address = _nullable_string(seed.get("address"))
+    description = _nullable_string(seed.get("description")) or ""
+    feature_values = seed.get("features") if isinstance(seed.get("features"), list) else []
+    features = [str(value).strip() for value in feature_values if str(value).strip()]
+    text_signals = [
+        address or "",
+        description,
+        _nullable_string(seed.get("building_name")) or "",
+        _nullable_string(seed.get("availability_text")) or "",
+        *features,
+    ]
+    coordinates = _coordinates_for_seed(seed, address)
+
+    return Listing.now(
+        listing_id=_seed_listing_id(source_name, listing_url),
+        source=source,
+        source_listing_id=_nullable_string(seed.get("source_listing_id")) or listing_url,
+        address=address,
+        rent=_int_or_none(seed.get("rent")),
+        beds=_float_or_none(seed.get("beds")),
+        baths=_float_or_none(seed.get("baths")),
+        sqft=_int_or_none(seed.get("sqft")),
+        description=description,
+        features=features,
+        listing_url=listing_url,
+        images=[str(value).strip() for value in seed.get("images", []) if str(value).strip()] if isinstance(seed.get("images"), list) else [],
+        lat=coordinates[0],
+        lng=coordinates[1],
+        has_dishwasher=_bool_or_infer(seed.get("has_dishwasher"), text_signals, [r"\bdishwasher\b"]),
+        has_in_unit_laundry=_bool_or_infer(
+            seed.get("has_in_unit_laundry"),
+            text_signals,
+            [r"\bin[-\s]?unit laundry\b", r"\bwasher/dryer in unit\b", r"\bw/d in unit\b"],
+        ),
+        has_parking=_bool_or_infer(seed.get("has_parking"), text_signals, [r"\bparking\b", r"\bgarage\b"]),
+        pet_friendly=_bool_or_infer(seed.get("pet_friendly"), text_signals, [r"\bpet friendly\b", r"\bdogs? ok\b", r"\bcats? ok\b"]),
+        has_private_outdoor_space=_bool_or_infer(
+            seed.get("has_private_outdoor_space"),
+            text_signals,
+            [r"\bbalcony\b", r"\bpatio\b", r"\bdeck\b", r"\bterrace\b"],
+        ),
+        has_fitness_center=_bool_or_infer(seed.get("has_fitness_center"), text_signals, [r"\bfitness center\b", r"\bgym\b"]),
+        natural_light_signal=_bool_or_infer(seed.get("natural_light_signal"), text_signals, [r"\bnatural light\b", r"\bsunny\b"]),
+        renovated_kitchen_signal=_bool_or_infer(
+            seed.get("renovated_kitchen_signal"),
+            text_signals,
+            [r"\brenovated kitchen\b", r"\bupdated kitchen\b", r"\bnewer appliances\b"],
+        ),
+        quiet_street_signal=_bool_or_infer(seed.get("quiet_street_signal"), text_signals, [r"\bquiet\b", r"\bresidential street\b"]),
+        caltrain_signal=_bool_or_infer(seed.get("caltrain_signal"), text_signals, [r"\bcaltrain\b"]),
+        walkability_signal=_bool_or_infer(seed.get("walkability_signal"), text_signals, [r"\bwalkable\b", r"\bwalk to\b"]),
+        street_parking_only=_bool_or_infer(seed.get("street_parking_only"), text_signals, [r"\bstreet parking\b"]),
+        older_interiors_signal=bool(seed.get("older_interiors_signal", False)),
+        ground_floor_signal=bool(seed.get("ground_floor_signal", False)),
+        unclear_availability_signal=bool(seed.get("unclear_availability_signal", False)),
+        broker_fee_signal=bool(seed.get("broker_fee_signal", False)),
+        completeness_score=infer_completeness_score(
+            address,
+            _int_or_none(seed.get("rent")),
+            description,
+            [str(value).strip() for value in seed.get("images", []) if str(value).strip()] if isinstance(seed.get("images"), list) else [],
+        ),
+        scam_signal=bool(seed.get("scam_signal", False)),
+        income_restricted_signal=bool(seed.get("income_restricted_signal", False)),
+        senior_housing_signal=bool(seed.get("senior_housing_signal", False)),
+        student_housing_signal=bool(seed.get("student_housing_signal", False)),
+        building_name=_nullable_string(seed.get("building_name")),
+        availability_text=_nullable_string(seed.get("availability_text")),
+        contact_name=_nullable_string(seed.get("contact_name")),
+        contact_phone=_nullable_string(seed.get("contact_phone")),
+        contact_email=_nullable_string(seed.get("contact_email")),
+        raw_payload={"seed_mode": True, "source_seed": seed},
+    )
+
+
+def _listing_source_for_name(source_name: str) -> ListingSource:
+    if source_name == "craigslist":
+        return ListingSource.CRAIGSLIST
+    if source_name == "zillow":
+        return ListingSource.ZILLOW
+    if source_name == "apartments_com":
+        return ListingSource.APARTMENTS_DOT_COM
+    raise ValueError(f"Unsupported source: {source_name}")
+
+
+def _seed_listing_id(source_name: str, listing_url: str) -> str:
+    return f"{source_name}_{sha1(listing_url.encode('utf-8')).hexdigest()[:12]}"
+
+
+def _coordinates_for_seed(seed: dict[str, Any], address: str | None) -> tuple[float | None, float | None]:
+    lat = _float_or_none(seed.get("lat"))
+    lng = _float_or_none(seed.get("lng"))
+    if lat is not None and lng is not None:
+        return lat, lng
+    if not address:
+        return None, None
+    return _geocode_address(address)
+
+
+def _nullable_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value in {None, ""}:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    text = str(value).strip().replace(",", "")
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value in {None, ""}:
+        return None
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace(",", "")
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _bool_or_infer(value: Any, texts: list[str], patterns: list[str]) -> bool:
+    if isinstance(value, bool):
+        return value
+    return infer_bool_from_text(texts, patterns)
+
+
+@lru_cache(maxsize=256)
+def _geocode_address(address: str) -> tuple[float | None, float | None]:
+    params = urlencode(
+        {
+            "address": address,
+            "benchmark": "Public_AR_Current",
+            "format": "json",
+        }
+    )
+    request = Request(
+        f"https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?{params}",
+        headers={"User-Agent": "apartment-search-bot/1.0"},
+    )
+    try:
+        with urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None, None
+
+    matches = payload.get("result", {}).get("addressMatches", [])
+    if not matches:
+        return None, None
+
+    coordinates = matches[0].get("coordinates", {})
+    x = coordinates.get("x")
+    y = coordinates.get("y")
+    if x is None or y is None:
+        return None, None
+    return float(y), float(x)
 
 
 app = create_app()

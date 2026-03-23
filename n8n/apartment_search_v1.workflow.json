@@ -1,30 +1,5 @@
 {
-  "name": "Apartment Search Bot v1",
   "nodes": [
-    {
-      "parameters": {},
-      "id": "manual-trigger",
-      "name": "Manual Trigger",
-      "type": "n8n-nodes-base.manualTrigger",
-      "typeVersion": 1,
-      "position": [
-        240,
-        220
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "return [{ json: { project_root: '/Users/shanewilson/Documents/New project', python_api_base_url: 'http://localhost:8000', twilio_from_number: '+14422392989', users: [{ key: 'shane', name: 'Shane', phone: '+19086426469' }, { key: 'jan', name: 'Jan', phone: '+19083289946' }], sheet_id: '1dM9TXmFEu_9JYxAFFWflN0h3WSRQvbJl-h3i3KnBGmg', sheet_tab: 'Listings', source_seeds: { craigslist: ['https://sfbay.craigslist.org/sfc/apa/d/san-francisco-san-francisco-bedroom/7920590322.html'], zillow: ['https://www.zillow.com/apartments/san-francisco-ca/mission-rock/CkCcwv/#udp-460992437'], apartments_com: ['https://www.apartments.com/edgewater-san-francisco-ca/1ybjl44/#pkndylr-2-unit'] } } }];"
-      },
-      "id": "build-config",
-      "name": "Build Workflow Config",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        500,
-        220
-      ]
-    },
     {
       "parameters": {
         "method": "POST",
@@ -34,45 +9,47 @@
         "jsonBody": "={{JSON.stringify({ source_seeds: $json.source_seeds, users: $json.users, sheet_id: $json.sheet_id, sheet_tab: $json.sheet_tab })}}",
         "options": {}
       },
-      "id": "run-python-search",
+      "id": "4d768ae0-cded-437f-a418-895f1709b447",
       "name": "Run Python Search",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        760,
-        220
+        -272,
+        96
       ]
     },
     {
       "parameters": {
         "jsCode": "const rows = $json.dashboard_rows || [];\nreturn rows.map((row) => ({ json: row }));"
       },
-      "id": "prepare-dashboard-rows",
+      "id": "5011ea28-457b-44bc-b4ba-002e335ef25f",
       "name": "Prepare Dashboard Rows",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1040,
-        120
+        -48,
+        0
       ]
     },
     {
       "parameters": {
-        "jsCode": "const alerts = $json.sms_alerts || [];\nreturn alerts.flatMap((alert) => {\n  const users = alert.users || [];\n  return users.map((user) => ({\n    json: {\n      listing_id: alert.listing_id,\n      to: user.phone,\n      body: alert.body,\n      user_key: user.key\n    }\n  }));\n});"
+        "jsCode": "const alerts = $json.sms_alerts || [];\nconst twilioFromNumber = $('Build Workflow Config1').first().json.twilio_from_number;\n\nreturn alerts.flatMap((alert) => {\n  const users = alert.users || [];\n  return users.map((user) => ({\n    json: {\n      listing_id: alert.listing_id,\n      to: user.phone,\n      body: alert.body,\n      user_key: user.key,\n      twilio_from_number: twilioFromNumber\n    }\n  }));\n});"
       },
-      "id": "prepare-sms-alerts",
+      "id": "e91ab871-15b0-4c63-ae32-7c5b5d37df20",
       "name": "Prepare High Score SMS",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1040,
-        320
+        -48,
+        192
       ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{$env.TWILIO_ACCOUNT_SID}}/Messages.json",
+        "url": "={{'https://api.twilio.com/2010-04-01/Accounts/' + $env.TWILIO_ACCOUNT_SID + '/Messages.json'}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
         "sendBody": true,
         "contentType": "form-urlencoded",
         "bodyParameters": {
@@ -83,7 +60,7 @@
             },
             {
               "name": "From",
-              "value": "+14422392989"
+              "value": "={{$json.twilio_from_number}}"
             },
             {
               "name": "Body",
@@ -91,125 +68,266 @@
             }
           ]
         },
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpBasicAuth",
         "options": {}
       },
-      "id": "send-twilio-sms",
+      "id": "18357dfc-e7cf-473b-804f-0a1fa6ca0eae",
       "name": "Send Twilio SMS",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1310,
-        320
+        224,
+        192
       ],
       "credentials": {
         "httpBasicAuth": {
-          "id": "",
-          "name": ""
+          "id": "L1u2FUiJvUBjMOOS",
+          "name": "Unnamed credential"
         }
       }
     },
     {
       "parameters": {
-        "path": "apartment-bot/sms-reply",
-        "httpMethod": "POST",
-        "responseMode": "responseNode",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1dM9TXmFEu_9JYxAFFWflN0h3WSRQvbJl-h3i3KnBGmg",
+          "mode": "list",
+          "cachedResultName": "Apartment Search Database_2026",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1dM9TXmFEu_9JYxAFFWflN0h3WSRQvbJl-h3i3KnBGmg/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "listings",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1dM9TXmFEu_9JYxAFFWflN0h3WSRQvbJl-h3i3KnBGmg/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "listing_id"
+          ],
+          "schema": [
+            {
+              "id": "listing_id",
+              "displayName": "listing_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "address",
+              "displayName": "address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "rent",
+              "displayName": "rent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "beds_baths",
+              "displayName": "beds_baths",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score",
+              "displayName": "score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "listing_url",
+              "displayName": "listing_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "shane_action",
+              "displayName": "shane_action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "wife_action",
+              "displayName": "wife_action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
         "options": {}
       },
-      "id": "twilio-reply-webhook",
-      "name": "Twilio SMS Reply Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
+      "id": "5373a0c3-67a9-4396-93ca-4b207df79872",
+      "name": "Append or update row in sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
       "position": [
         240,
-        620
+        0
       ],
-      "webhookId": "apartment-bot-sms-reply"
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "5JdYOZnudWw4HDHN",
+          "name": "March2026_TwilioAptSearch"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "const body = $json.Body || '';\nconst from = $json.From || '';\nconst listingMatch = body.match(/\\[ID:([^\\]]+)\\]/i);\nconst commandText = body.replace(/\\[ID:[^\\]]+\\]/i, '').trim();\nreturn [{ json: { from_number: from, raw_body: body, body: commandText, listing_id: listingMatch ? listingMatch[1].trim() : '', twilio_message_sid: $json.MessageSid || '' } }];"
+        "jsCode": "const items = $input.all();\nconst out = [];\nconst seenEmailIds = new Set();\n\nfunction headerValue(headers, name) {\n  const match = (headers || []).find((header) => String(header.name || '').toLowerCase() === name);\n  return match ? String(match.value || '') : '';\n}\n\nfor (const item of items) {\n  const json = item.json || {};\n  const payload = json.payload || {};\n  const headers = Array.isArray(payload.headers) ? payload.headers : [];\n  const emailId = String(json.id || '').trim();\n  if (!emailId || seenEmailIds.has(emailId)) continue;\n  seenEmailIds.add(emailId);\n\n  const from = String(json.From || json.from || headerValue(headers, 'from') || '').trim().toLowerCase();\n  const subject = String(json.Subject || json.subject || headerValue(headers, 'subject') || '').trim();\n  const snippet = String(json.snippet || '').trim();\n  const internalDate = String(json.internalDate || '').trim();\n\n  let source = null;\n  if (from.includes('alerts@alerts.craigslist.org')) source = 'craigslist';\n  else if (from.includes('mail.zillow.com')) source = 'zillow';\n  else if (from.includes('apartments.com')) source = 'apartments_com';\n  else continue;\n\n  out.push({\n    json: {\n      email_id: emailId,\n      source,\n      email_from: from,\n      email_subject: subject,\n      snippet,\n      internal_date: internalDate\n    }\n  });\n}\n\nreturn out;"
       },
-      "id": "normalize-reply",
-      "name": "Normalize Reply Payload",
+      "id": "6299d1f6-ef93-455b-844a-17d9ef52413d",
+      "name": "normalize email results",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        520,
-        620
+        -1232,
+        96
       ]
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "http://localhost:8000/handle-reply",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{JSON.stringify($json)}}",
-        "options": {}
+        "operation": "get",
+        "messageId": "={{$json.email_id}}"
       },
-      "id": "handle-reply-python",
-      "name": "Handle Reply In Python",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "b75c7607-7773-48a9-b28f-14f11e598c86",
+      "name": "Get a message",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
       "position": [
-        800,
-        620
-      ]
+        -992,
+        96
+      ],
+      "webhookId": "f3d74e96-209d-400b-b664-1d4824cc0d05",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "BZToF4qWblr4cUke",
+          "name": "Apartment Searcher credential"
+        }
+      }
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{JSON.stringify({ ok: true, message: $json.reply_text || 'Reply received.' })}}",
-        "options": {}
+        "jsCode": "const items = $input.all();\nconst out = [];\n\nfunction decodeBase64Url(value) {\n  if (!value) return '';\n  const normalized = String(value).replace(/-/g, '+').replace(/_/g, '/');\n  const pad = normalized.length % 4;\n  const padded = pad ? normalized + '='.repeat(4 - pad) : normalized;\n  return Buffer.from(padded, 'base64').toString('utf8');\n}\n\nfunction decodeQuotedPrintable(value) {\n  return String(value || '')\n    .replace(/=\\r\\n/g, '')\n    .replace(/=\\n/g, '')\n    .replace(/=([0-9A-F]{2})/gi, function (_, hex) { return String.fromCharCode(parseInt(hex, 16)); });\n}\n\nfunction htmlEntityDecode(value) {\n  return String(value || '')\n    .replace(/&amp;/gi, '&')\n    .replace(/&quot;/gi, '\"')\n    .replace(/&#39;/gi, \"'\")\n    .replace(/&apos;/gi, \"'\")\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>')\n    .replace(/&#x2F;/gi, '/')\n    .replace(/&#47;/gi, '/');\n}\n\nfunction decodeText(value) {\n  return htmlEntityDecode(decodeQuotedPrintable(value || ''));\n}\n\nfunction decodePart(part) {\n  return decodeText(decodeBase64Url(part && part.body ? part.body.data || '' : ''));\n}\n\nfunction collectParts(part, bucket) {\n  if (!part) return;\n  const mimeType = String(part.mimeType || '').toLowerCase();\n  const decoded = decodePart(part);\n  if (decoded) {\n    if (mimeType.includes('text/plain')) bucket.textPlain.push(decoded);\n    if (mimeType.includes('text/html')) bucket.textHtml.push(decoded);\n  }\n  if (Array.isArray(part.parts)) {\n    for (const child of part.parts) collectParts(child, bucket);\n  }\n}\n\nfunction extractUrls(text) {\n  return Array.from(String(text || '').matchAll(/https?:\\/\\/[^\\s\"'<>]+/gi)).map(function (match) {\n    return match[0].replace(/[),.]+$/, '');\n  });\n}\n\nfunction tryDecode(value) {\n  try {\n    return decodeURIComponent(value);\n  } catch {\n    return value;\n  }\n}\n\nfunction expandUrl(url) {\n  const seen = new Set();\n  const queue = [String(url || '').trim()];\n  const results = [];\n\n  while (queue.length) {\n    const current = queue.shift();\n    if (!current || seen.has(current)) continue;\n    seen.add(current);\n    results.push(current);\n\n    const decoded = tryDecode(current);\n    if (decoded && !seen.has(decoded)) queue.push(decoded);\n\n    const match = current.match(/[?&](?:target|url|u|q|dest|destination|redirect)=([^&]+)/i);\n    if (match && match[1]) {\n      queue.push(match[1]);\n      queue.push(tryDecode(match[1]));\n    }\n  }\n\n  return results;\n}\n\nfunction detectSource(from) {\n  const lower = String(from || '').toLowerCase();\n  if (lower.includes('craigslist.org')) return 'craigslist';\n  if (lower.includes('zillow.com')) return 'zillow';\n  if (lower.includes('apartments.com')) return 'apartments_com';\n  return null;\n}\n\nfunction isCraigslistListing(url) {\n  const value = String(url || '').toLowerCase();\n  return value.includes('craigslist.org/') && !value.includes('accounts.craigslist.org') && value.includes('/d/') && value.endsWith('.html');\n}\n\nfunction isZillowListing(url) {\n  const value = String(url || '').toLowerCase();\n  return value.includes('zillow.com/')\n    && !value.includes('click.mail.zillow.com/')\n    && !value.includes('/email/feedback')\n    && !value.includes('/email/unsubscribe')\n    && !value.includes('zillowgroup.com')\n    && !value.includes('/myzillow/')\n    && !value.includes('/homes/for_rent/')\n    && (value.includes('/apartments/') || value.includes('/homedetails/') || value.includes('/routing/email/property-notifications/'));\n}\n\nfunction isApartmentsListing(url) {\n  const value = String(url || '').toLowerCase();\n  return value.includes('apartments.com/') && !value.includes('/account') && !value.includes('/login') && !value.includes('unsubscribe');\n}\n\nfunction keepUrlForSource(source, url) {\n  if (source === 'craigslist') return isCraigslistListing(url);\n  if (source === 'zillow') return isZillowListing(url);\n  if (source === 'apartments_com') return isApartmentsListing(url);\n  return false;\n}\n\nfunction cleanUrl(source, url) {\n  try {\n    const parsed = new URL(url);\n    parsed.hash = '';\n    const keys = Array.from(parsed.searchParams.keys());\n    for (const key of keys) {\n      const lower = key.toLowerCase();\n      if (lower.startsWith('utm_') || lower === 'rtoken' || lower === 'z' || lower === 'sseid') {\n        parsed.searchParams.delete(key);\n      }\n    }\n    return parsed.toString();\n  } catch {\n    return String(url || '').trim();\n  }\n}\n\nfunction scoreUrl(source, url) {\n  const value = String(url || '').toLowerCase();\n  if (source === 'craigslist') return 100;\n  if (source === 'zillow') {\n    if (value.includes('/homedetails/')) return 100;\n    if (value.includes('/apartments/')) return 90;\n    if (value.includes('/routing/email/property-notifications/')) return 80;\n  }\n  if (source === 'apartments_com') return 70;\n  return 0;\n}\n\nfunction chooseUrl(source, urls) {\n  const unique = Array.from(new Set(urls.map(function (url) { return cleanUrl(source, url); }).filter(Boolean)));\n  unique.sort(function (left, right) { return scoreUrl(source, right) - scoreUrl(source, left); });\n  return unique[0] || '';\n}\n\nfunction normalizedLines(text) {\n  return String(text || '')\n    .replace(/\\r/g, '\\n')\n    .split('\\n')\n    .map(function (line) { return line.replace(/\\s+/g, ' ').trim(); })\n    .filter(Boolean);\n}\n\nfunction parseMoney(text) {\n  const match = String(text || '').match(/\\$([\\d,]+)\\s*\\/mo/i);\n  return match ? parseInt(match[1].replace(/,/g, ''), 10) : null;\n}\n\nfunction detectFeatures(text) {\n  const haystack = String(text || '').toLowerCase();\n  const features = [];\n  if (/dishwasher/.test(haystack)) features.push('dishwasher');\n  if (/in[-\\s]?unit laundry|washer\\/dryer in unit|w\\/d in unit/.test(haystack)) features.push('in-unit laundry');\n  if (/parking|garage/.test(haystack)) features.push('parking');\n  if (/fitness center|gym/.test(haystack)) features.push('fitness center');\n  if (/pet friendly|cats? ok|dogs? ok/.test(haystack)) features.push('pet friendly');\n  if (/balcony|patio|deck|terrace/.test(haystack)) features.push('private outdoor space');\n  return features;\n}\n\nfunction extractZillowMetadata(subject, snippet, plainText, listingUrl) {\n  const combined = [subject, snippet, plainText].filter(Boolean).join('\\n');\n  const lines = normalizedLines(combined);\n  const statsMatch = combined.match(/(\\d+(?:\\.\\d+)?)\\s*bd\\s*\\|\\s*(\\d+(?:\\.\\d+)?)\\s*ba\\s*\\|\\s*([\\d,]+)\\s*sqft/i);\n  const addressLine = lines.find(function (line) {\n    return /,\\s*CA\\b/i.test(line) && (/^\\d/.test(line) || /\\bAPT\\b/i.test(line));\n  }) || null;\n  const features = detectFeatures(combined);\n  return {\n    listing_url: listingUrl,\n    source_listing_id: listingUrl,\n    address: addressLine,\n    rent: parseMoney(combined),\n    beds: statsMatch ? Number(statsMatch[1]) : null,\n    baths: statsMatch ? Number(statsMatch[2]) : null,\n    sqft: statsMatch ? parseInt(statsMatch[3].replace(/,/g, ''), 10) : null,\n    description: subject || snippet || '',\n    features: features,\n    has_dishwasher: features.includes('dishwasher'),\n    has_in_unit_laundry: features.includes('in-unit laundry'),\n    has_parking: features.includes('parking'),\n    pet_friendly: features.includes('pet friendly'),\n    has_private_outdoor_space: features.includes('private outdoor space'),\n    has_fitness_center: features.includes('fitness center'),\n    caltrain_signal: /caltrain/i.test(combined),\n    walkability_signal: /walk to|walkable/i.test(combined)\n  };\n}\n\nfor (const item of items) {\n  const json = item.json || {};\n  const payload = json.payload || {};\n  const headers = Array.isArray(payload.headers) ? payload.headers : [];\n  const headerMap = Object.fromEntries(headers.map(function (h) {\n    return [String(h.name || '').toLowerCase(), String(h.value || '')];\n  }));\n\n  const emailId = String(json.id || '').trim();\n  const from = String(headerMap.from || '').toLowerCase();\n  const subject = String(headerMap.subject || '');\n  const snippet = decodeText(String(json.snippet || ''));\n  const source = detectSource(from);\n  if (!source) continue;\n\n  const bucket = { textPlain: [], textHtml: [] };\n  collectParts(payload, bucket);\n\n  const rawUrls = [].concat(\n    extractUrls(subject),\n    extractUrls(snippet),\n    bucket.textPlain.flatMap(extractUrls),\n    bucket.textHtml.flatMap(extractUrls)\n  );\n\n  const chosenUrl = chooseUrl(\n    source,\n    rawUrls.flatMap(expandUrl).filter(function (url) { return keepUrlForSource(source, url); })\n  );\n\n  const base = {\n    version: 'extract-email-seeds-v1',\n    email_id: emailId,\n    source: source,\n    email_from: from,\n    email_subject: subject,\n    snippet: snippet,\n    listing_url: chosenUrl,\n    url_found: Boolean(chosenUrl)\n  };\n\n  if (!chosenUrl) {\n    out.push({ json: base });\n    continue;\n  }\n\n  if (source === 'zillow') {\n    const metadata = extractZillowMetadata(subject, snippet, bucket.textPlain.join('\\n'), chosenUrl);\n    out.push({ json: Object.assign({}, base, metadata) });\n    continue;\n  }\n\n  out.push({ json: base });\n}\n\nreturn out;"
       },
-      "id": "reply-ack",
-      "name": "Reply Ack",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        1060,
-        620
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "return [{ json: { note: 'Connect this node output to a Google Sheets Append/Update Row node in n8n. Match on listing_id. Map only the 10 v1 dashboard columns.' } }];"
-      },
-      "id": "sheet-note",
-      "name": "Google Sheets Wiring Note",
+      "id": "10368e95-97ca-447b-a3e0-5aaf29811b0f",
+      "name": "Extract Listing URLs1",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1310,
-        120
+        -736,
+        96
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().filter(function (item) {\n  return item.json && item.json.url_found && item.json.listing_url;\n});\n\nconst sourceSeeds = {\n  craigslist: [],\n  zillow: [],\n  apartments_com: []\n};\n\nconst seen = {\n  craigslist: new Set(),\n  zillow: new Set(),\n  apartments_com: new Set()\n};\n\nfor (const item of items) {\n  const row = item.json || {};\n  if (!sourceSeeds[row.source]) continue;\n\n  if (row.source === 'zillow') {\n    const key = String(row.listing_url || '').trim();\n    if (!key || seen.zillow.has(key)) continue;\n    seen.zillow.add(key);\n    sourceSeeds.zillow.push({\n      listing_url: key,\n      source_listing_id: row.source_listing_id || key,\n      address: row.address || null,\n      rent: row.rent ?? null,\n      beds: row.beds ?? null,\n      baths: row.baths ?? null,\n      sqft: row.sqft ?? null,\n      description: row.description || '',\n      features: Array.isArray(row.features) ? row.features : [],\n      has_dishwasher: Boolean(row.has_dishwasher),\n      has_in_unit_laundry: Boolean(row.has_in_unit_laundry),\n      has_parking: Boolean(row.has_parking),\n      pet_friendly: Boolean(row.pet_friendly),\n      has_private_outdoor_space: Boolean(row.has_private_outdoor_space),\n      has_fitness_center: Boolean(row.has_fitness_center),\n      caltrain_signal: Boolean(row.caltrain_signal),\n      walkability_signal: Boolean(row.walkability_signal)\n    });\n    continue;\n  }\n\n  const key = String(row.listing_url || '').trim();\n  if (!key || seen[row.source].has(key)) continue;\n  seen[row.source].add(key);\n  sourceSeeds[row.source].push(key);\n}\n\nconst totalSeeds = Object.values(sourceSeeds).reduce(function (sum, values) {\n  return sum + values.length;\n}, 0);\n\nif (totalSeeds === 0) {\n  return [];\n}\n\nreturn [{\n  json: {\n    project_root: '/Users/shanewilson/Documents/2026apartmentsearch',\n    python_api_base_url: 'https://apartment-search-bot-production-cb73.up.railway.app',\n    twilio_from_number: '+18339746094',\n    users: [\n      { key: 'shane', name: 'Shane', phone: '+19086426469' },\n      { key: 'wife', name: 'Jan', phone: '+19083289946' }\n    ],\n    sheet_id: '1dM9TXmFEu_9JYxAFFWflN0h3WSRQvbJl-h3i3KnBGmg',\n    sheet_tab: 'Listings',\n    source_seeds: sourceSeeds\n  }\n}];"
+      },
+      "id": "b2ef7854-5adc-499d-ba8a-dc016be8a04c",
+      "name": "Build Workflow Config1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "6e3c2cc4-20a0-4de7-b060-f7d5a2192785",
+      "name": "Schedule Trigger1",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1600,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "filters": {
+          "labelIds": [
+            "INBOX"
+          ],
+          "q": "is:unread newer_than:2d (from:rental-instant-updates@mail.zillow.com OR from:alerts@alerts.craigslist.org OR from:apartments.com)"
+        }
+      },
+      "id": "296f396c-23fd-4289-ab85-5bb8414c9bc3",
+      "name": "Get Gmail Alerts1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -1456,
+        96
+      ],
+      "webhookId": "9e16817e-a90b-4ea4-b0b9-eacaaa9ab630",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "BZToF4qWblr4cUke",
+          "name": "Apartment Searcher credential"
+        }
+      }
     }
   ],
   "connections": {
-    "Manual Trigger": {
-      "main": [
-        [
-          {
-            "node": "Build Workflow Config",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Build Workflow Config": {
-      "main": [
-        [
-          {
-            "node": "Run Python Search",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Run Python Search": {
       "main": [
         [
@@ -230,7 +348,7 @@
       "main": [
         [
           {
-            "node": "Google Sheets Wiring Note",
+            "node": "Append or update row in sheet",
             "type": "main",
             "index": 0
           }
@@ -248,33 +366,66 @@
         ]
       ]
     },
-    "Twilio SMS Reply Webhook": {
+    "normalize email results": {
       "main": [
         [
           {
-            "node": "Normalize Reply Payload",
+            "node": "Get a message",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Normalize Reply Payload": {
+    "Get a message": {
       "main": [
         [
           {
-            "node": "Handle Reply In Python",
+            "node": "Extract Listing URLs1",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Handle Reply In Python": {
+    "Build Workflow Config1": {
       "main": [
         [
           {
-            "node": "Reply Ack",
+            "node": "Run Python Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Get Gmail Alerts1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Gmail Alerts1": {
+      "main": [
+        [
+          {
+            "node": "normalize email results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Listing URLs1": {
+      "main": [
+        [
+          {
+            "node": "Build Workflow Config1",
             "type": "main",
             "index": 0
           }
@@ -283,10 +434,8 @@
     }
   },
   "pinData": {},
-  "settings": {
-    "executionOrder": "v1"
-  },
-  "versionId": "apartment-search-bot-v1",
-  "meta": {},
-  "tags": []
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d8c384ab0177d459f6f6bf9a10237e6792ab0f921a1f81201ff531280f56622e"
+  }
 }
