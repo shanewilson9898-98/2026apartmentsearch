@@ -85,6 +85,7 @@ class Listing:
     lng: float | None
     has_dishwasher: bool = False
     has_in_unit_laundry: bool = False
+    has_building_laundry: bool = False
     has_parking: bool = False
     pet_friendly: bool = False
     has_private_outdoor_space: bool = False

@@ -25,8 +25,8 @@ def apply_hard_filters(listing: Listing, settings: Settings) -> FilterResult:
         reasons.append("below minimum bathrooms")
     if listing.rent is None or listing.rent > settings.hard_max_rent:
         reasons.append("rent exceeds hard max or missing")
-    if not listing.has_in_unit_laundry:
-        reasons.append("missing in-unit laundry")
+    if not (listing.has_in_unit_laundry or listing.has_building_laundry):
+        reasons.append("missing in-unit or on-site laundry")
     if not listing.has_dishwasher:
         reasons.append("missing dishwasher")
 

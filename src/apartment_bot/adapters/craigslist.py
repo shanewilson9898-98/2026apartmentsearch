@@ -193,6 +193,7 @@ class CraigslistAdapter(ListingSourceAdapter):
             lng=lng,
             has_dishwasher=has_dishwasher,
             has_in_unit_laundry=has_laundry_in_unit,
+            has_building_laundry=has_building_laundry,
             has_parking=has_parking,
             pet_friendly=pet_friendly,
             has_private_outdoor_space=infer_bool_from_text(feature_texts, [r"\bbalcony\b", r"\bpatio\b", r"\bdeck\b", r"\bterrace\b"]),

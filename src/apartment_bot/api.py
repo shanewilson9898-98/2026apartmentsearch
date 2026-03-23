@@ -288,6 +288,11 @@ def _build_listing_from_seed(source_name: str, seed: dict[str, Any]) -> Listing:
             text_signals,
             [r"\bin[-\s]?unit laundry\b", r"\bwasher/dryer in unit\b", r"\bw/d in unit\b"],
         ),
+        has_building_laundry=_bool_or_infer(
+            seed.get("has_building_laundry"),
+            text_signals,
+            [r"\blaundry in bldg\b", r"\blaundry on site\b", r"\bon[-\s]?site laundry\b", r"\bonsite laundry\b"],
+        ),
         has_parking=_bool_or_infer(seed.get("has_parking"), text_signals, [r"\bparking\b", r"\bgarage\b"]),
         pet_friendly=_bool_or_infer(seed.get("pet_friendly"), text_signals, [r"\bpet friendly\b", r"\bdogs? ok\b", r"\bcats? ok\b"]),
         has_private_outdoor_space=_bool_or_infer(
