@@ -6,7 +6,9 @@ from typing import Any
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
+from apartment_bot.adapters.apartments_com import ApartmentsComAdapter
 from apartment_bot.adapters.craigslist import CraigslistAdapter
+from apartment_bot.adapters.zillow import ZillowAdapter
 from apartment_bot.config import Settings
 from apartment_bot.core.models import OverallListingStatus
 from apartment_bot.core.normalize import normalize_phone
@@ -18,7 +20,6 @@ from apartment_bot.core.store import JsonStateStore
 from apartment_bot.integrations.outreach import OutreachService
 from apartment_bot.orchestration.handlers import handle_user_reply
 from apartment_bot.orchestration.pipeline import evaluate_listing
-from apartment_bot.orchestration.sample_data import build_seed_listing
 
 
 class UserPayload(BaseModel):
@@ -78,10 +79,8 @@ def create_app() -> FastAPI:
         for source_name, urls in payload.source_seeds.items():
             source_summary = {"discovered": 0, "new": 0, "already_seen": 0}
             try:
-                if source_name == "craigslist":
-                    listings = CraigslistAdapter(source_urls=urls).fetch_listings()
-                else:
-                    listings = [build_seed_listing(source_name, url) for url in urls]
+                adapter = _build_source_adapter(source_name, urls)
+                listings = adapter.fetch_listings()
             except Exception as exc:
                 skipped.extend(
                     {
@@ -224,6 +223,16 @@ def create_app() -> FastAPI:
         return response
 
     return app
+
+
+def _build_source_adapter(source_name: str, urls: list[str]):
+    if source_name == "craigslist":
+        return CraigslistAdapter(source_urls=urls)
+    if source_name == "zillow":
+        return ZillowAdapter(source_urls=urls)
+    if source_name == "apartments_com":
+        return ApartmentsComAdapter(source_urls=urls)
+    raise ValueError(f"Unsupported source: {source_name}")
 
 
 app = create_app()
